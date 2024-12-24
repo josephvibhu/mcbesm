@@ -1,14 +1,17 @@
 #!/bin/bash
 # mcbesmv9.3 by josephvibhu
 
-# Source the modular functions
-source src/mcbeup.sh
-source src/mcbebak.sh
-source src/mcbeinstall.sh
+# Get the directory of the current script
+SCRIPT_DIR=$(dirname "$0")
+
+# Source the modular functions using the relative path
+source "$SCRIPT_DIR/src/mcbeup.sh"
+source "$SCRIPT_DIR/src/mcbebak.sh"
+source "$SCRIPT_DIR/src/mcbeinstall.sh"
 
 mcbe() {
     # Check if the server directory exists
-    if [ -d server/bedrock-server ]; then
+    if [ -d $SCRIPT_DIR/server/bedrock-server ]; then
         echo "Directory found! Proceeding with the script..."
     else
         # Installs Minecraft if the directory does not exist
