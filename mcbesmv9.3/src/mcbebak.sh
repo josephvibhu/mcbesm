@@ -35,3 +35,4 @@ rclone copy "$world_directory" "$backup_directory" --progress || {
 echo "Backup completed successfully for '$world_name'."
 }
 
+
