@@ -9,6 +9,8 @@ mcbeinstall() {
     # Set random number for user-agent
     RandNum=$RANDOM
 
+    mkdir $SCRIPT_DIR/temp
+
     # Download the latest version of Minecraft Bedrock server page
     curl -H "Accept-Encoding: identity" -H "Accept-Language: en" -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.33 (KHTML, like Gecko) Chrome/90.0.$RandNum.212 Safari/537.33" -o $SCRIPT_DIR/temp/version.html https://minecraft.net/en-us/download/server/bedrock/
 
