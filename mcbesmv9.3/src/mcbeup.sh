@@ -2,14 +2,14 @@
 #v3.2
 
 # Function to check if an update is needed and perform it
-update_server() {
+mcbeup() {
     echo "Checking for the latest version of Minecraft Bedrock server..."
 
     # Set random number for user-agent
     RandNum=$RANDOM
 
     # Define the current version file path
-    VERSION_FILE="/server/bedrock-server/version.txt"
+    VERSION_FILE="$SCRIPT_DIR/server/bedrock-server/version.txt"
 
     # Read the current version from the version.txt file
     if [[ -f "$VERSION_FILE" ]]; then
@@ -22,10 +22,10 @@ update_server() {
 
     # Finding the latest version by opening the site and simulating the download link
     # Download the latest version of Minecraft Bedrock server page
-    curl -H "Accept-Encoding: identity" -H "Accept-Language: en" -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.33 (KHTML, like Gecko) Chrome/90.0.$RandNum.212 Safari/537.33" -o mcbeman/temp/version.html https://minecraft.net/en-us/download/server/bedrock/
+    curl -H "Accept-Encoding: identity" -H "Accept-Language: en" -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.33 (KHTML, like Gecko) Chrome/90.0.$RandNum.212 Safari/537.33" -o $SCRIPT_DIR/temp/version.html https://minecraft.net/en-us/download/server/bedrock/
 
     # Extract the download URL for the latest server version
-    LATEST_VERSION=$(basename $(grep -o 'https://www.minecraft.net/bedrockdedicatedserver/bin-linux/[^"]*' downloads/version.html))  # Get the latest version file name
+    LATEST_VERSION=$(basename $(grep -o 'https://www.minecraft.net/bedrockdedicatedserver/bin-linux/[^"]*' $SCRIPT_DIR/temp/version.html))  # Get the latest version file name
 
     echo "Download URL: $DownloadURL"
     echo "LATEST_VERSION: $LATEST_VERSION"
@@ -39,43 +39,39 @@ update_server() {
     fi
 
     # Backup the Old Version 
-    mv mcbeman/Server/bedrock-server mcbeman/temp/bak/bedrock-server.bak
-    rm -r mcbeman/Server/bedrock-server
+    mv $SCRIPT_DIR/server/bedrock-server mcbeman/temp/bak/bedrock-server.bak
+    rm -r $SCRIPT_DIR/server/bedrock-server
 
     # Download the latest version of Minecraft Bedrock dedicated server
     echo "Downloading the latest version of Minecraft Bedrock server..."
     UserName=$(whoami)
-    curl -H "Accept-Encoding: identity" -H "Accept-Language: en" -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.33 (KHTML, like Gecko) Chrome/90.0.$RandNum.212 Safari/537.33" -o "mcbeman/temp/$LATEST_VERSION" "$DownloadURL"
+    curl -H "Accept-Encoding: identity" -H "Accept-Language: en" -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.33 (KHTML, like Gecko) Chrome/90.0.$RandNum.212 Safari/537.33" -o "$SCRIPT_DIR/temp/$LATEST_VERSION" "$DownloadURL"
 
     # Unzip the downloaded file
     echo "Unzipping the downloaded file..."
-    unzip -o -q "mcbeman/temp/$LATEST_VERSION" -d "mcbeman/temp"
+    unzip -o -q "$SCRIPT_DIR/temp/$LATEST_VERSION" -d "mcbeman/temp"
 
     # Clean up the HTML file after extracting
-    rm -f mcbeman/temp/version.html
+    rm -f $SCRIPT_DIR/temp/version.html
 
     # Rename the extracted folder to 'bedrock-server'
     echo "Renaming the extracted folder to 'bedrock-server'..."
-    EXTRACTED_FOLDER=$(ls -d mcbeman/temp/bedrock-server*)  # Get the extracted folder's name
+    EXTRACTED_FOLDER=$(ls -d $SCRIPT_DIR/temp/bedrock-server*)  # Get the extracted folder's name
 
     # Move the updated server files into the correct location
-    mv "$EXTRACTED_FOLDER" "mcbeman/Server/bedrock-server"
+    mv "$EXTRACTED_FOLDER" "$SCRIPT_DIR/server/bedrock-server"
 
     # Update the version.txt file to the new version
     echo "Updating the version.txt file..."
     echo "$LATEST_VERSION" > "$VERSION_FILE"
 
     # Restore configuration and worlds
-    [ -d ~/mcbeman/temp/bak/bedrock-server.bak ] && {
+    [ -d $SCRIPT_DIR/temp/bak/bedrock-server.bak ] && {
         echo "Restoring configuration and worlds..."
-        cp ~mcbeman/temp/bak/bedrock-server.bak/server.properties ~/mcbeman/Server/bedrock-server || { echo "Failed to restore server.properties"; exit 1; }
-        cp -r ~mcbeman/temp/bak/bedrock-server.bak/worlds ~/mcbeman/Server/bedrock-server || { echo "Failed to restore worlds"; exit 1; }
+        cp ~$SCRIPT_DIR/temp/bak/bedrock-server.bak/server.properties ~/$SCRIPT_DIR/server/bedrock-server || { echo "Failed to restore server.properties"; exit 1; }
+        cp -r ~$SCRIPT_DIR/temp/bak/bedrock-server.bak/worlds ~$SCRIPT_DIR/server/bedrock-server || { echo "Failed to restore worlds"; exit 1; }
     }
 
     echo "Server update complete!"
+    exit 0
 }
-
-# Only call update_server if this script is executed directly (not sourced)
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    update_server
-fi
