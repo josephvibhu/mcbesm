@@ -1,17 +1,19 @@
 #!/bin/bash
 # mcbesmv9.3 by josephvibhu
 
-# Get the directory of the current script
-SCRIPT_DIR=$(dirname "$0")
+# Path variables
+SOURCE_DIR="/home/sudojoe/mcbesm"
+SERVER_DIR="/home/sudojoe/server/bedrock-server"
+TEMP_DIR="/home/sudojoe/temp"
 
 # Source the modular functions using the relative path
-source "$SCRIPT_DIR/src/mcbeup.sh"
-source "$SCRIPT_DIR/src/mcbebak.sh"
-source "$SCRIPT_DIR/src/mcbeinstall.sh"
+source "$SCRIPT_DIR/mcbesm/src/mcbeup.sh"
+source "$SCRIPT_DIR/mcbesm/src/mcbebak.sh"
+source "$SCRIPT_DIR/mcbesm/src/mcbeinstall.sh"
 
 mcbe() {
     # Check if the server directory exists
-    if [ -d $SCRIPT_DIR/server/bedrock-server ]; then
+    if [ -d $SCRIPT_DIR/mcbesm/server/bedrock-server ]; then
         echo "Directory found! Proceeding with the script..."
     else
         # Installs Minecraft if the directory does not exist
@@ -22,7 +24,7 @@ mcbe() {
     
     # Listing Worlds
     echo "Listing available worlds in 'server/bedrock-server/worlds/' directory..."
-    worlds=$(find $SCRIPT_DIR/server/bedrock-server/worlds/ -mindepth 1 -maxdepth 1 -type d | sed 's|^.*/||')
+    worlds=$(find $SCRIPT_DIR/mcbesm/server/bedrock-server/worlds/ -mindepth 1 -maxdepth 1 -type d | sed 's|^.*/||')
 
     [ -n "$worlds" ] || { echo "No worlds available in the 'worlds' directory!"; exit 1; }
 
@@ -34,7 +36,7 @@ mcbe() {
     world_name=$(echo "$world_name" | xargs)
 
     # Update server.properties
-    sed -i "s/^level-name=.*/level-name=$world_name/" server/bedrock-server/server.properties || { echo "Failed to update server.properties"; exit 1; }
+    sed -i "s/^level-name=.*/level-name=$world_name/" mcbesm/server/bedrock-server/server.properties || { echo "Failed to update server.properties"; exit 1; }
 
     # Start the server
     run
@@ -43,10 +45,11 @@ mcbe() {
 
 run() {
     # Starts the server
-    cd server/bedrock-server
+    cd mcbesm/server/bedrock-server
     echo "Starting the Minecraft server with world '$world_name'..."
     LD_LIBRARY_PATH=. ./bedrock_server
-    
+    cd /home/sudojoe
+
     # After the server is stopped using stop 
     # Prompt to backup world
     read -p "Do you want to backup the world (y/n)? " backup_choice
@@ -68,6 +71,9 @@ run() {
 # Main function
 main() {
     mcbe
+}
+
+maincbe
 }
 
 main
