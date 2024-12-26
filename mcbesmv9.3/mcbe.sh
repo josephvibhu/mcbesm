@@ -48,7 +48,6 @@ run() {
     cd mcbesm/server/bedrock-server
     echo "Starting the Minecraft server with world '$world_name'..."
     LD_LIBRARY_PATH=. ./bedrock_server
-    cd /home/sudojoe
 
     # After the server is stopped using stop 
     # Prompt to backup world
