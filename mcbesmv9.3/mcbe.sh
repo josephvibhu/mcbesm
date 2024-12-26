@@ -22,7 +22,7 @@ mcbe() {
     
     # Listing Worlds
     echo "Listing available worlds in 'server/bedrock-server/worlds/' directory..."
-    worlds=$(find server/bedrock-server/worlds/ -mindepth 1 -maxdepth 1 -type d | sed 's|^.*/||')
+    worlds=$(find $SCRIPT_DIR/server/bedrock-server/worlds/ -mindepth 1 -maxdepth 1 -type d | sed 's|^.*/||')
 
     [ -n "$worlds" ] || { echo "No worlds available in the 'worlds' directory!"; exit 1; }
 
