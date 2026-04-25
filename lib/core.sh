@@ -172,3 +172,15 @@ mc_status() {
     done
     echo -e "${BLUE}=========================================================================${NC}"
 }
+
+# Jump into the Sever console
+mc_console() {
+    local world_name=$1
+    if screen -list | grep -q "\.mc_$world_name"; then
+        info_msg "Attaching to console. Press Ctrl+A then D to exit (don't use Ctrl+C!)"
+        sleep 2
+        screen -r "mc_$world_name"
+    else
+        error_msg "Server '$world_name' is not running."
+    fi
+}
