@@ -126,15 +126,49 @@ mc_stop() {
     success_msg "Stop command sent. The session will close once saving is complete."
 }
 
-# --- Function: List Status ---
+# --- Function: Advanced Status Dashboard ---
 mc_status() {
-    echo -e "${BLUE}--- Minecraft Bedrock Status ---${NC}"
-    local running_servers=$(screen -ls | grep "mc_" | awk '{print $1}')
+    local_ip=$(hostname -I | awk '{print $1}')
+    
+    echo -e "${BLUE}${BOLD}=========================================================================${NC}"
+    printf "${BOLD}%-15s | %-10s | %-10s | %-20s | %-10s${NC}\n" "WORLD NAME" "STATUS" "VERSION" "ENDPOINT" "PORT"
+    echo -e "${BLUE}=========================================================================${NC}"
 
-    if [ -z "$running_servers" ]; then
-        echo "No servers are currently online."
-    else
-        echo "Online Worlds:"
-        echo "$running_servers" | sed 's/^[0-9]*\.mc_//' | sed 's/^/  - /'
-    fi
+    # Loop through all folders in the instances directory
+    for world_path in "$INSTANCES_DIR"/*; do
+        # Skip if it's not a directory
+        [ -d "$world_path" ] || continue
+        
+        world_name=$(basename "$world_path")
+        prop_file="$world_path/server.properties"
+        session_name="mc_$world_name"
+        
+        # 1. Determine Operational Status
+        if screen -list | grep -q "\.$session_name"; then
+            status_text="${GREEN}Running${NC}"
+        else
+            status_text="${RED}Offline${NC}"
+        fi
+
+        # 2. Get Port from config
+        if [ -f "$prop_file" ]; then
+            port=$(grep "^server-port=" "$prop_file" | cut -d'=' -f2 | tr -d '\r')
+        else
+            port="???"
+        fi
+
+        # 3. Get Version (Reading from the record file we created in mc_create)
+        # If the file doesn't exist, we'll just say 'Unknown'
+        if [ -f "$PROJECT_ROOT/version_installed.txt" ]; then
+            version=$(cat "$PROJECT_ROOT/version_installed.txt" | cut -d'-' -f3 | sed 's/.zip//')
+        else
+            version="Unknown"
+        fi
+
+        # 4. Print the Row
+        # Using printf ensures the columns stay aligned regardless of name length
+        printf "%-15s | %-19s | %-10s | %-20s | %-10s\n" \
+               "$world_name" "$status_text" "$version" "$local_ip" "$port"
+    done
+    echo -e "${BLUE}=========================================================================${NC}"
 }
