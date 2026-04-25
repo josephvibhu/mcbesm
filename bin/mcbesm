@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# --- Path Configuration ---
+# Automatically find the project root regardless of where the script is called from
+CONF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$CONF_DIR/.." && pwd)"
+
+INSTANCES_DIR="$PROJECT_ROOT/instances"
+TEMPLATES_DIR="$PROJECT_ROOT/templates"
+DOWNLOAD_CACHE="$PROJECT_ROOT/.cache"
+
+# --- Server Settings ---
+# The User-Agent is required to download from Minecraft's servers via curl
+USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+
+# Create necessary directories if they don't exist
+mkdir -p "$INSTANCES_DIR" "$DOWNLOAD_CACHE"
+
+
+# Get the directory where the script lives
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load the library files
+source "$SCRIPT_DIR/../lib/ui.sh"
+source "$SCRIPT_DIR/../lib/core.sh"
+
+# Argument Parsing
+COMMAND=$1
+WORLD_NAME=$2
+
+case "$COMMAND" in
+    create)
+        mc_create "$WORLD_NAME"
+        ;;
+    start)
+        mc_start "$WORLD_NAME"
+        ;;
+    stop)
+        mc_stop "$WORLD_NAME"
+        ;;
+    status)
+        mc_status
+        ;;
+    help|*)
+        print_usage
+        ;;
+esac
