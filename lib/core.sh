@@ -126,51 +126,51 @@ mc_stop() {
     success_msg "Stop command sent. The session will close once saving is complete."
 }
 
-# --- Function: Advanced Status Dashboard ---
+# --- Function: Advanced Status Dashboard (Fixed Alignment) ---
 mc_status() {
     local_ip=$(hostname -I | awk '{print $1}')
     
-    echo -e "${BLUE}${BOLD}=========================================================================${NC}"
-    printf "${BOLD}%-15s | %-10s | %-10s | %-20s | %-10s${NC}\n" "WORLD NAME" "STATUS" "VERSION" "ENDPOINT" "PORT"
-    echo -e "${BLUE}=========================================================================${NC}"
+    print_header
+    print_table_header
 
-    # Loop through all folders in the instances directory
     for world_path in "$INSTANCES_DIR"/*; do
-        # Skip if it's not a directory
         [ -d "$world_path" ] || continue
         
         world_name=$(basename "$world_path")
         prop_file="$world_path/server.properties"
         session_name="mc_$world_name"
         
-        # 1. Determine Operational Status
+        # 1. Determine Status & Color logic
         if screen -list | grep -q "\.$session_name"; then
-            status_text="${GREEN}Running${NC}"
+            status_color=$GREEN
+            status_text="Running"
         else
-            status_text="${RED}Offline${NC}"
+            status_color=$RED
+            status_text="Offline"
         fi
 
-        # 2. Get Port from config
-        if [ -f "$prop_file" ]; then
-            port=$(grep "^server-port=" "$prop_file" | cut -d'=' -f2 | tr -d '\r')
-        else
-            port="???"
-        fi
+        # 2. Get Port
+        port=$(grep "^server-port=" "$prop_file" 2>/dev/null | cut -d'=' -f2 | tr -d '\r')
+        [ -z "$port" ] && port="19132"
 
-        # 3. Get Version (Reading from the record file we created in mc_create)
-        # If the file doesn't exist, we'll just say 'Unknown'
-        if [ -f "$PROJECT_ROOT/version_installed.txt" ]; then
-            version=$(cat "$PROJECT_ROOT/version_installed.txt" | cut -d'-' -f3 | sed 's/.zip//')
+        # 3. Get Version (Cleanly)
+        if [ -f "$INSTALLED_RECORD" ]; then
+            # Extracting version from filename like bedrock-server-1.20.73.01.zip
+            version=$(cat "$INSTALLED_RECORD" | grep -oP '\d+\.\d+\.\d+\.\d+')
         else
             version="Unknown"
         fi
 
-        # 4. Print the Row
-        # Using printf ensures the columns stay aligned regardless of name length
-        printf "%-15s | %-19s | %-10s | %-20s | %-10s\n" \
-               "$world_name" "$status_text" "$version" "$local_ip" "$port"
+        # 4. The Aligned Print Logic
+        # Notice we print the color code, then the PADDED string, then reset.
+        # This keeps the math clean for printf.
+        printf "%-15s | " "$world_name"
+        printf "${status_color}%-12s${NC} | " "$status_text"
+        printf "%-10s | " "$version"
+        printf "%-18s | " "$local_ip"
+        printf "%-8s\n" "$port"
     done
-    echo -e "${BLUE}=========================================================================${NC}"
+    echo -e "${BLUE}${BOLD}-------------------------------------------------------------------------${NC}"
 }
 
 # Jump into the Sever console
