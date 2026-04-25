@@ -13,56 +13,101 @@ mc_create() {
     fi
 
     if [ -d "$INSTANCES_DIR/$world_name" ]; then
-        error_msg "A world named '$world_name' already exists."
+        error_msg "World '$world_name' already exists."
         return 1
     fi
 
-    info_msg "Fetching latest Bedrock Server download link..."
-    # Scrapes the official site for the Linux download URL
-    DOWNLOAD_URL=$(curl -A "$USER_AGENT" -s https://www.minecraft.net/en-us/download/server/bedrock | grep -o 'https://minecraft.azureedge.net/bin-linux/[^"]*')
+    # 1. Fetch Latest API Data
+    info_msg "Checking API for latest version..."
+    local rand_num=$RANDOM
+    curl -H "Accept-Encoding: identity" -H "Accept-Language: en" -L \
+         -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.$rand_num.212 Safari/537.36" \
+         -o "$DOWNLOAD_CACHE/version.json" "$API_URL"
 
-    if [ -z "$DOWNLOAD_URL" ]; then
-        error_msg "Could not retrieve download link. Check your internet connection."
+    # 2. Extract Logic
+    local latest_url=$(grep -o 'https://www.minecraft.net/bedrockdedicatedserver/bin-linux/[^"]*' "$DOWNLOAD_CACHE/version.json" | head -n 1)
+    local latest_file=$(echo "$latest_url" | sed 's#.*/##')
+
+    if [ -z "$latest_file" ]; then
+        error_msg "API retrieval failed. Check your network or the API URL."
         return 1
     fi
 
-    info_msg "Downloading server software..."
-    curl -A "$USER_AGENT" -L "$DOWNLOAD_URL" -o "$DOWNLOAD_CACHE/bedrock_latest.zip"
+    # 3. Check for Version Pin (Manual Override)
+    local target_file="$latest_file"
+    local target_url="$latest_url"
 
-    info_msg "Setting up instance: $world_name"
+    if [ -e "$PIN_FILE" ]; then
+        local pin_file=$(cat "$PIN_FILE")
+        warn_msg "Version pin found: $pin_file"
+        target_file="$pin_file"
+        target_url="https://www.minecraft.net/bedrockdedicatedserver/bin-linux/$target_file"
+    fi
+
+    # 4. Handle Download (Only if not already in cache)
+    if [ ! -f "$DOWNLOAD_CACHE/$target_file" ]; then
+        info_msg "Downloading version: $target_file"
+        curl -L -A "Mozilla/5.0" -o "$DOWNLOAD_CACHE/$target_file" "$target_url"
+    else
+        info_msg "Version $target_file found in cache. Skipping download."
+    fi
+
+    # 5. Create Instance and Unzip
+    info_msg "Extracting to instances/$world_name..."
     mkdir -p "$INSTANCES_DIR/$world_name"
-    unzip -q "$DOWNLOAD_CACHE/bedrock_latest.zip" -d "$INSTANCES_DIR/$world_name"
-
-    # Auto-accept EULA logic (Bedrock doesn't have a eula.txt, but we ensure permissions)
-    chmod +x "$INSTANCES_DIR/$world_name/bedrock_server"
+    unzip -o -q "$DOWNLOAD_CACHE/$target_file" -d "$INSTANCES_DIR/$world_name"
     
-    success_msg "World '$world_name' created successfully."
+    # 6. Post-Installation Config (Using your old project's settings)
+    info_msg "Applying server configurations..."
+    local prop_file="$INSTANCES_DIR/$world_name/server.properties"
+    if [ -f "$prop_file" ]; then
+        # Note: I'm keeping your specific port and distance settings
+        sed -i 's/^view-distance=.*/view-distance=64/' "$prop_file"
+        sed -i 's/^max-threads=.*/max-threads=0/' "$prop_file"
+        # We might want to make the port dynamic later so multiple servers can run!
+        sed -i 's/^server-port=.*/server-port=41675/' "$prop_file"
+    fi
+
+    # 7. Finalize
+    chmod +x "$INSTANCES_DIR/$world_name/bedrock_server"
+    echo "$target_file" > "$INSTALLED_RECORD"
+    success_msg "World '$world_name' is ready!"
 }
 
+# --- Function: Start a Server ---
 # --- Function: Start a Server ---
 mc_start() {
     local world_name=$1
     local session_name="mc_$world_name"
+    local prop_file="$INSTANCES_DIR/$world_name/server.properties"
+
+    # 1. Validation checks
+    if [ ! -d "$INSTANCES_DIR/$world_name" ]; then
+        error_msg "World '$world_name' not found."
+        return 1
+    fi
 
     if screen -list | grep -q "\.$session_name"; then
         error_msg "Server '$world_name' is already running."
         return 1
     fi
 
-    if [ ! -d "$INSTANCES_DIR/$world_name" ]; then
-        error_msg "World '$world_name' not found."
-        return 1
-    fi
-
-    info_msg "Starting '$world_name' in the background..."
-    cd "$INSTANCES_DIR/$world_name" || return
+    # 2. Extract the actual port from server.properties
+    # This ensures the UI matches the reality of the config
+    local actual_port=$(grep "^server-port=" "$prop_file" | cut -d'=' -f2 | tr -d '\r')
     
-    # LD_LIBRARY_PATH is required for Bedrock server to find its own dependencies
+    # Fallback to default if grep fails for some reason
+    if [ -z "$actual_port" ]; then actual_port="19132"; fi
+
+    info_msg "Starting '$world_name' on port $actual_port..."
+    
+    # 3. Launch
+    cd "$INSTANCES_DIR/$world_name" || return
     screen -dmS "$session_name" bash -c "export LD_LIBRARY_PATH=. && ./bedrock_server"
     
-    # Networking tip: Show the local IP so you know where to connect
+    # 4. Success Output
     local_ip=$(hostname -I | awk '{print $1}')
-    success_msg "Server started! Connect via $local_ip:19132"
+    success_msg "Server started! Connect via ${local_ip}:${actual_port}"
 }
 
 # --- Function: Stop a Server ---
