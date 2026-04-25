@@ -20,21 +20,19 @@ mc_create() {
         return 1
     fi
 
-    # --- 2. Smart Port Selection ---
+    # --- 2. Smart Port Selection (Fixed for IPv6) ---
     if [ -n "$requested_port" ]; then
         final_port=$requested_port
-        info_msg "Using manually requested port: $final_port"
     else
-        info_msg "No port specified. Scanning for available port..."
-        # This scans all existing server.properties, finds the ports, sorts them, and grabs the highest.
+        info_msg "Scanning for available port pair..."
+        # Find the highest port used
         max_port=$(grep -rh "^server-port=" "$INSTANCES_DIR"/*/server.properties 2>/dev/null | cut -d'=' -f2 | tr -d '\r' | sort -n | tail -1)
         
         if [ -z "$max_port" ]; then
-            final_port=41675  # Your starting default
-            info_msg "No existing servers found. Starting at default port: $final_port"
+            final_port=41675
         else
-            final_port=$((max_port + 1))
-            info_msg "Highest port found was $max_port. Assigning: $final_port"
+            # INCREMENT BY 2 to avoid IPv6 shadowing
+            final_port=$((max_port + 2))
         fi
     fi
 
@@ -97,6 +95,8 @@ mc_create() {
 
 # --- Function: Start a Server ---
 mc_start() {
+    screen -wipe > /dev/null # Clear dead/crashed sessions first
+    
     local world_name=$1
     local session_name="mc_$world_name"
     local prop_file="$INSTANCES_DIR/$world_name/server.properties"
@@ -148,6 +148,7 @@ mc_stop() {
 
 # --- Function: Advanced Status Dashboard (Fixed Alignment) ---
 mc_status() {
+    screen -wipe > /dev/null # Clear dead/crashed sessions first
     local_ip=$(hostname -I | awk '{print $1}')
     
     print_header
