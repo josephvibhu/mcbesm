@@ -193,14 +193,26 @@ mc_status() {
     echo -e "${BLUE}${BOLD}-------------------------------------------------------------------------${NC}"
 }
 
-# Jump into the Sever console
+# --- Function: Attach to Server Console ---
 mc_console() {
     local world_name=$1
-    if screen -list | grep -q "\.mc_$world_name"; then
-        info_msg "Attaching to console. Press Ctrl+A then D to exit (don't use Ctrl+C!)"
+    local session_name="mc_$world_name"
+
+    # Check if a name was provided
+    if [ -z "$world_name" ]; then
+        error_msg "Usage: mcbesm console <world_name>"
+        return 1
+    fi
+
+    # Check if the session actually exists
+    if screen -list | grep -q "\.$session_name"; then
+        info_msg "Attaching to '${world_name}' console..."
+        echo -e "${YELLOW}${BOLD}IMPORTANT:${NC} Press ${CYAN}Ctrl+A${NC} then ${CYAN}D${NC} to detach."
+        echo -e "Do ${RED}NOT${NC} use Ctrl+C or you will kill the server!"
         sleep 2
-        screen -r "mc_$world_name"
+        screen -r "$session_name"
     else
-        error_msg "Server '$world_name' is not running."
+        error_msg "Server '$world_name' is not currently running."
+        return 1
     fi
 }

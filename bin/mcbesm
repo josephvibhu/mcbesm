@@ -38,6 +38,10 @@ case "$COMMAND" in
     stop)
         mc_stop "$WORLD_NAME"
         ;;
+    console)
+        mc_console "$WORLD_NAME"
+        ;;
+    # ------------------------
     status)
         mc_status
         ;;
