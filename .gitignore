@@ -1,0 +1,13 @@
+# Ignore the Minecraft server binaries (The big stuff)
+.cache/
+*.zip
+
+# Ignore the actual server world data (The personal stuff)
+instances/
+
+# Ignore temporary API files
+version.json
+
+# Ignore system-specific files
+.DS_Store
+*.log
