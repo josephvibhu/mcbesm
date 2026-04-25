@@ -7,8 +7,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/ui.sh"
 # --- Function: Create a New World ---
 mc_create() {
     local world_name=$1
+    local requested_port=$2  # The new port argument
+    
+    # --- 1. Validation ---
     if [ -z "$world_name" ]; then
-        error_msg "Usage: mcbesm create <world_name>"
+        error_msg "Usage: mcbesm create <world_name> [port]"
         return 1
     fi
 
@@ -17,14 +20,31 @@ mc_create() {
         return 1
     fi
 
-    # 1. Fetch Latest API Data
+    # --- 2. Smart Port Selection ---
+    if [ -n "$requested_port" ]; then
+        final_port=$requested_port
+        info_msg "Using manually requested port: $final_port"
+    else
+        info_msg "No port specified. Scanning for available port..."
+        # This scans all existing server.properties, finds the ports, sorts them, and grabs the highest.
+        max_port=$(grep -rh "^server-port=" "$INSTANCES_DIR"/*/server.properties 2>/dev/null | cut -d'=' -f2 | tr -d '\r' | sort -n | tail -1)
+        
+        if [ -z "$max_port" ]; then
+            final_port=41675  # Your starting default
+            info_msg "No existing servers found. Starting at default port: $final_port"
+        else
+            final_port=$((max_port + 1))
+            info_msg "Highest port found was $max_port. Assigning: $final_port"
+        fi
+    fi
+
+    # --- 3. Versioning & API Logic ---
     info_msg "Checking API for latest version..."
     local rand_num=$RANDOM
     curl -H "Accept-Encoding: identity" -H "Accept-Language: en" -L \
          -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.$rand_num.212 Safari/537.36" \
          -o "$DOWNLOAD_CACHE/version.json" "$API_URL"
 
-    # 2. Extract Logic
     local latest_url=$(grep -o 'https://www.minecraft.net/bedrockdedicatedserver/bin-linux/[^"]*' "$DOWNLOAD_CACHE/version.json" | head -n 1)
     local latest_file=$(echo "$latest_url" | sed 's#.*/##')
 
@@ -33,7 +53,6 @@ mc_create() {
         return 1
     fi
 
-    # 3. Check for Version Pin (Manual Override)
     local target_file="$latest_file"
     local target_url="$latest_url"
 
@@ -44,7 +63,7 @@ mc_create() {
         target_url="https://www.minecraft.net/bedrockdedicatedserver/bin-linux/$target_file"
     fi
 
-    # 4. Handle Download (Only if not already in cache)
+    # --- 4. Download & Extraction ---
     if [ ! -f "$DOWNLOAD_CACHE/$target_file" ]; then
         info_msg "Downloading version: $target_file"
         curl -L -A "Mozilla/5.0" -o "$DOWNLOAD_CACHE/$target_file" "$target_url"
@@ -52,29 +71,30 @@ mc_create() {
         info_msg "Version $target_file found in cache. Skipping download."
     fi
 
-    # 5. Create Instance and Unzip
     info_msg "Extracting to instances/$world_name..."
     mkdir -p "$INSTANCES_DIR/$world_name"
     unzip -o -q "$DOWNLOAD_CACHE/$target_file" -d "$INSTANCES_DIR/$world_name"
-    
-    # 6. Post-Installation Config (Using your old project's settings)
-    info_msg "Applying server configurations..."
+
+    # --- 5. Post-Installation Configuration ---
+    info_msg "Applying server configurations for port $final_port..."
     local prop_file="$INSTANCES_DIR/$world_name/server.properties"
+    
     if [ -f "$prop_file" ]; then
-        # Note: I'm keeping your specific port and distance settings
+        # Networking Essentials: Set unique IPv4 and IPv6 ports
+        sed -i "s/^server-port=.*/server-port=$final_port/" "$prop_file"
+        sed -i "s/^server-portv6=.*/server-portv6=$((final_port + 1))/" "$prop_file"
+        
+        # Performance & Gameplay tweaks
         sed -i 's/^view-distance=.*/view-distance=64/' "$prop_file"
         sed -i 's/^max-threads=.*/max-threads=0/' "$prop_file"
-        # We might want to make the port dynamic later so multiple servers can run!
-        sed -i 's/^server-port=.*/server-port=41675/' "$prop_file"
     fi
 
-    # 7. Finalize
+    # --- 6. Finalize ---
     chmod +x "$INSTANCES_DIR/$world_name/bedrock_server"
     echo "$target_file" > "$INSTALLED_RECORD"
-    success_msg "World '$world_name' is ready!"
+    success_msg "World '$world_name' is ready on port $final_port!"
 }
 
-# --- Function: Start a Server ---
 # --- Function: Start a Server ---
 mc_start() {
     local world_name=$1

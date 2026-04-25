@@ -30,7 +30,7 @@ WORLD_NAME=$2
 
 case "$COMMAND" in
     create)
-        mc_create "$WORLD_NAME"
+        mc_create "$WORLD_NAME" "$3"
         ;;
     start)
         mc_start "$WORLD_NAME"
