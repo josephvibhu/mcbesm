@@ -55,3 +55,14 @@ print_usage() {
     echo -e "  ${CYAN}help${NC}                          Show this documentation"
     echo ""
 }
+
+# --- User Interaction ---
+confirm_action() {
+    # Usage: if confirm_action "Delete world '$1'?"; then ...
+    echo -en "${YELLOW}${BOLD}${WARN} CONFIRM:${NC} $1 [y/N]: "
+    read -r response
+    case "$response" in
+        [yY][eE][sS]|[yY]) return 0 ;;
+        *) return 1 ;;
+    esac
+}
