@@ -31,29 +31,33 @@ print_header() {
 }
 
 print_table_header() {
-    echo -e "${BLUE}${BOLD}-------------------------------------------------------------------------${NC}"
-    printf "${BOLD}%-15s | %-12s | %-10s | %-18s | %-8s${NC}\n" \
-           "WORLD NAME" "STATUS" "VERSION" "IP ADDRESS" "PORT"
-    echo -e "${BLUE}${BOLD}-------------------------------------------------------------------------${NC}"
+    # UPDATED: Added a 15-character column for the Active World
+    # Column Widths: 15 | 15 | 12 | 10 | 18 | 8
+    echo -e "${BLUE}${BOLD}------------------------------------------------------------------------------------${NC}"
+    printf "${BOLD}%-15s | %-15s | %-12s | %-10s | %-18s | %-8s${NC}\n" \
+           "INSTANCE" "ACTIVE WORLD" "STATUS" "VERSION" "IP ADDRESS" "PORT"
+    echo -e "${BLUE}${BOLD}------------------------------------------------------------------------------------${NC}"
 }
 
 print_usage() {
     print_header
-    echo -e "${BOLD}Usage:${NC} mcbesm [command] [world_name] [args...]"
+    echo -e "${BOLD}Usage:${NC} mcbesm [command] [instance_name] [args...]"
     echo ""
     echo -e "${BOLD}Management Commands:${NC}"
-    echo -e "  ${CYAN}create${NC}  <name> [port] [ver]   Deploy server (Auto-port +2 logic)"
-    echo -e "  ${CYAN}start${NC}   <name>                Launch instance in background"
-    echo -e "  ${CYAN}stop${NC}    <name>                Safe shutdown via console injection"
-    echo -e "  ${CYAN}config${NC}  <name> [key] [val]    Advanced server.properties editor"
-    echo -e "  ${CYAN}console${NC} <name>                Attach to live server terminal"
-    echo -e "  ${CYAN}delete${NC}  <name>                Permanently remove instance and free ports"
+    echo -e "  ${CYAN}create${NC}  <name>         Deploy a new server instance"
+    echo -e "  ${CYAN}start${NC}   <name>         Pick a world and launch in background"
+    echo -e "  ${CYAN}stop${NC}    <name>         Graceful shutdown of the active world"
+    echo -e "  ${CYAN}import${NC}  <name> <path>  Import .mcworld, .zip, or folder as a new world"
+    echo -e "  ${CYAN}delete${NC}  <name>         Permanently remove instance and all its worlds"
     echo ""
-    echo -e "${BOLD}Information Commands:${NC}"
-    echo -e "  ${CYAN}status${NC}                        View the live server dashboard"
-    echo -e "  ${CYAN}versions${NC}                      List cached server binaries in .cache/"
-    echo -e "  ${CYAN}help${NC}                          Show this documentation"
+    echo -e "${BOLD}Information & Config:${NC}"
+    echo -e "  ${CYAN}status${NC}                 View dashboard (Instances vs. Active Worlds)"
+    echo -e "  ${CYAN}worlds${NC}   <name>        List all worlds stored inside an instance"
+    echo -e "  ${CYAN}config${NC}   <name> <k> <v> Edit server.properties for an instance"
+    echo -e "  ${CYAN}versions${NC}               List cached server binaries"
+    echo -e "  ${CYAN}console${NC}  <name>        Attach to the live server terminal"
     echo ""
+    echo -e "💡 ${YELLOW}Tip:${NC} You can drag and drop world files into the terminal to paste their path!"
 }
 
 # --- User Interaction ---

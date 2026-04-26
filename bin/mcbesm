@@ -30,22 +30,32 @@ WORLD_NAME=$2
 
 case "$COMMAND" in
     create)
-        mc_create "$WORLD_NAME" "$3"
+        # Arguments: Instance Name ($2), Port ($3), Version ($4)
+        mc_create "$WORLD_NAME" "$3" "$4"
         ;;
     start)
+        # Now triggers the interactive world selector inside core.sh
         mc_start "$WORLD_NAME"
         ;;
     stop)
         mc_stop "$WORLD_NAME"
         ;;
-    console)
-        mc_console "$WORLD_NAME"
-        ;;
     status)
         mc_status
         ;;
+    worlds)
+        # New: List all save-files inside a specific instance
+        mc_list_worlds "$WORLD_NAME"
+        ;;
+    import)
+        # Order: Instance ($2), Path ($3), New Name ($4)
+        mc_import "$2" "$3" "$4"
+        ;;
     config)
         mc_config "$WORLD_NAME" "$3" "$4"
+        ;;
+    console)
+        mc_console "$WORLD_NAME"
         ;;
     delete)
         mc_delete "$WORLD_NAME"

@@ -95,39 +95,35 @@ mc_create() {
 
 # --- Function: Start a Server ---
 mc_start() {
-    screen -wipe > /dev/null # Clear dead/crashed sessions first
+    local instance_name=$1
+    local worlds_dir="$INSTANCES_DIR/$instance_name/worlds"
     
-    local world_name=$1
-    local session_name="mc_$world_name"
-    local prop_file="$INSTANCES_DIR/$world_name/server.properties"
-
-    # 1. Validation checks
-    if [ ! -d "$INSTANCES_DIR/$world_name" ]; then
-        error_msg "World '$world_name' not found."
+    # 1. List worlds and ask user to pick one
+    info_msg "Available worlds in $instance_name:"
+    local worlds=($(ls -d "$worlds_dir"/*/ 2>/dev/null | sed 's#.*/##; s#/##'))
+    
+    if [ ${#worlds[@]} -eq 0 ]; then
+        error_msg "No worlds found. Use 'import' or 'create' first."
         return 1
     fi
 
-    if screen -list | grep -q "\.$session_name"; then
-        error_msg "Server '$world_name' is already running."
-        return 1
-    fi
+    for i in "${!worlds[@]}"; do
+        echo "  [$i] ${worlds[$i]}"
+    done
 
-    # 2. Extract the actual port from server.properties
-    # This ensures the UI matches the reality of the config
-    local actual_port=$(grep "^server-port=" "$prop_file" | cut -d'=' -f2 | tr -d '\r')
-    
-    # Fallback to default if grep fails for some reason
-    if [ -z "$actual_port" ]; then actual_port="19132"; fi
+    echo -en "${YELLOW}${BOLD}?? Select world number to run [Default 0]: ${NC}"
+    read -r choice
+    choice=${choice:-0}
+    local selected_world=${worlds[$choice]}
 
-    info_msg "Starting '$world_name' on port $actual_port..."
+    # 2. Update server.properties BEFORE starting
+    sed -i "s/^level-name=.*/level-name=$selected_world/" "$INSTANCES_DIR/$instance_name/server.properties"
     
-    # 3. Launch
-    cd "$INSTANCES_DIR/$world_name" || return
-    screen -dmS "$session_name" bash -c "export LD_LIBRARY_PATH=. && ./bedrock_server"
-    
-    # 4. Success Output
-    local_ip=$(hostname -I | awk '{print $1}')
-    success_msg "Server started! Connect via ${local_ip}:${actual_port}"
+    # 3. Standard Start Logic (Screen)
+    # ... [Keep your existing screen -dmS logic here] ...
+    info_msg "Launching '$instance_name' with world '$selected_world'..."
+    cd "$INSTANCES_DIR/$instance_name" && screen -dmS "mc_$instance_name" bash -c "export LD_LIBRARY_PATH=. && ./bedrock_server"
+    success_msg "Server is live!"
 }
 
 # --- Function: Stop a Server ---
@@ -148,7 +144,7 @@ mc_stop() {
 
 # --- Function: Advanced Status Dashboard (Fixed Alignment) ---
 mc_status() {
-    screen -wipe > /dev/null # Clear dead/crashed sessions first
+    screen -wipe > /dev/null 
     local_ip=$(hostname -I | awk '{print $1}')
     
     print_header
@@ -174,24 +170,29 @@ mc_status() {
         port=$(grep "^server-port=" "$prop_file" 2>/dev/null | cut -d'=' -f2 | tr -d '\r')
         [ -z "$port" ] && port="19132"
 
+        # --- NEW CODE START: Get Active World Name ---
+        active_world=$(grep "^level-name=" "$prop_file" 2>/dev/null | cut -d'=' -f2 | tr -d '\r')
+        [ -z "$active_world" ] && active_world="Bedrock level"
+        # --- NEW CODE END ---
+
         # 3. Get Version (Cleanly)
-        if [ -f "$INSTALLED_RECORD" ]; then
-            # Extracting version from filename like bedrock-server-1.20.73.01.zip
-            version=$(cat "$INSTALLED_RECORD" | grep -oP '\d+\.\d+\.\d+\.\d+')
+        # (Note: Using per-world version.txt is better for multi-version setups)
+        if [ -f "$world_path/version.txt" ]; then
+            version=$(cat "$world_path/version.txt" | grep -oP '\d+\.\d+\.\d+\.\d+')
         else
             version="Unknown"
         fi
 
         # 4. The Aligned Print Logic
-        # Notice we print the color code, then the PADDED string, then reset.
-        # This keeps the math clean for printf.
+        # Update the first printf to include the new column %-15s
         printf "%-15s | " "$world_name"
+        printf "%-15s | " "$active_world"   # <--- ADD THIS LINE
         printf "${status_color}%-12s${NC} | " "$status_text"
         printf "%-10s | " "$version"
         printf "%-18s | " "$local_ip"
         printf "%-8s\n" "$port"
     done
-    echo -e "${BLUE}${BOLD}-------------------------------------------------------------------------${NC}"
+    echo -e "${BLUE}${BOLD}----------------------------------------------------------------------------------${NC}"
 }
 
 # --- Function: Attach to Server Console ---
@@ -301,5 +302,90 @@ mc_delete() {
         success_msg "World '$world_name' has been removed. Ports are now available for reuse."
     else
         info_msg "Deletion cancelled."
+    fi
+}
+
+# --- Function: Multi-Format World Import ---
+mc_import() {
+    local instance_name="$1"
+    local input_path="$2"
+    local new_world_name="$3"
+    
+    # [Keep your basic validation here...]
+
+    local instance_path="$INSTANCES_DIR/$instance_name"
+    local dest_dir="$instance_path/worlds/$new_world_name"
+
+    # 1. Detect File Type (Reliable Way)
+    local file_type=$(file --mime-type -b "$input_path")
+
+    # 2. Process based on actual content, not just extension
+    if [ -d "$input_path" ]; then
+        info_msg "Importing folder..."
+        cp -r "$input_path" "$dest_dir" || return 1
+        
+    elif [[ "$file_type" == "application/zip" ]] || [[ "$input_path" == *.mcworld ]]; then
+        info_msg "Extracting ZIP/MCWORLD..."
+        mkdir -p "$dest_dir"
+        if unzip -o -q "$input_path" -d "$dest_dir"; then
+            success_msg "Imported '$new_world_name' successfully."
+        else
+            error_msg "ZIP extraction failed."; rm -rf "$dest_dir"; return 1
+        fi
+
+    elif [[ "$file_type" == "application/x-rar" ]] || [[ "$file_type" == "application/vnd.rar" ]]; then
+        info_msg "Extracting RAR archive..."
+        mkdir -p "$dest_dir"
+        # 'unrar x' extracts with full paths, '-idq' is quiet mode
+        if unrar x -idq "$input_path" "$dest_dir/"; then
+            success_msg "Imported RAR-based world '$new_world_name'."
+        else
+            error_msg "RAR extraction failed. Is 'unrar' installed?"; rm -rf "$dest_dir"; return 1
+        fi
+
+    else
+        error_msg "Unsupported file type: $file_type"
+        return 1
+    fi
+
+    chmod -R 755 "$dest_dir"
+}
+
+# --- Function: List all worlds inside an instance ---
+mc_list_worlds() {
+    local instance_name="$1"
+    
+    # 1. Validation
+    if [ -z "$instance_name" ]; then
+        error_msg "Usage: mcbesm worlds <instance_name>"
+        return 1
+    fi
+
+    # Ensure we have the full path to the instances folder
+    local worlds_dir="$INSTANCES_DIR/$instance_name/worlds"
+
+    if [ ! -d "$worlds_dir" ]; then
+        error_msg "Directory not found: $worlds_dir"
+        info_msg "Maybe the instance name is misspelled?"
+        return 1
+    fi
+
+    print_header
+    info_msg "Scanning storage for '$instance_name'..."
+    echo -e "${BLUE}--------------------------------------------------${NC}"
+    
+    # Use 'find' instead of 'ls' - it's more reliable for scripts
+    local count=0
+    while IFS= read -r dir; do
+        world=$(basename "$dir")
+        echo -e "  [${CYAN}#${NC}] $world"
+        ((count++))
+    done < <(find "$worlds_dir" -maxdepth 1 -mindepth 1 -type d)
+
+    if [ "$count" -eq 0 ]; then
+        warn_msg "No world folders found in $worlds_dir"
+    else
+        echo -e "${BLUE}--------------------------------------------------${NC}"
+        success_msg "Found $count world(s)."
     fi
 }
