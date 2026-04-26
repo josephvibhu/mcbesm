@@ -272,3 +272,34 @@ mc_config() {
         info_msg "Current value for '$key' is: ${YELLOW}$current_val${NC}"
     fi
 }
+
+# --- Function: Delete a World ---
+mc_delete() {
+    local world_name=$1
+    local session_name="mc_$world_name"
+
+    if [ -z "$world_name" ]; then
+        error_msg "Usage: mcbesm delete <world_name>"
+        return 1
+    fi
+
+    if [ ! -d "$INSTANCES_DIR/$world_name" ]; then
+        error_msg "World '$world_name' not found."
+        return 1
+    fi
+
+    # Security: Don't delete a running server!
+    if screen -list | grep -q "\.$session_name\s"; then
+        error_msg "Server is running. Stop it first with 'mcbesm stop $world_name'."
+        return 1
+    fi
+
+    # Confirmation using the function from ui.sh
+    if confirm_action "Are you sure you want to PERMANENTLY delete '$world_name'?"; then
+        info_msg "Deleting files and freeing ports..."
+        rm -rf "$INSTANCES_DIR/$world_name"
+        success_msg "World '$world_name' has been removed. Ports are now available for reuse."
+    else
+        info_msg "Deletion cancelled."
+    fi
+}

@@ -47,6 +47,9 @@ case "$COMMAND" in
     config)
         mc_config "$WORLD_NAME" "$3" "$4"
         ;;
+    delete)
+        mc_delete "$WORLD_NAME"
+        ;;
     help|*)
         print_usage
         ;;

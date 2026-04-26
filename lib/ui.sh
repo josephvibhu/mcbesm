@@ -47,6 +47,7 @@ print_usage() {
     echo -e "  ${CYAN}stop${NC}    <name>                Safe shutdown via console injection"
     echo -e "  ${CYAN}config${NC}  <name> [key] [val]    Advanced server.properties editor"
     echo -e "  ${CYAN}console${NC} <name>                Attach to live server terminal"
+    echo -e "  ${CYAN}delete${NC}  <name>                Permanently remove instance and free ports"
     echo ""
     echo -e "${BOLD}Information Commands:${NC}"
     echo -e "  ${CYAN}status${NC}                        View the live server dashboard"
