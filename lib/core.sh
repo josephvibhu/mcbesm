@@ -217,3 +217,58 @@ mc_console() {
         return 1
     fi
 }
+
+# --- Function: Advanced Property Editor ---
+mc_config() {
+    local world_name=$1
+    local key=$2
+    local value=$3
+    local prop_file="$INSTANCES_DIR/$world_name/server.properties"
+
+    # 1. Basic Validation
+    if [ -z "$world_name" ]; then
+        error_msg "Usage: mcbesm config <world_name> [property_key] [new_value]"
+        return 1
+    fi
+
+    if [ ! -f "$prop_file" ]; then
+        error_msg "Config file for '$world_name' not found."
+        return 1
+    fi
+
+    # 2. VIEW MODE: If only the world name is provided
+    if [ -z "$key" ]; then
+        print_header
+        info_msg "Current configuration for '$world_name':"
+        echo -e "${BLUE}--------------------------------------------------${NC}"
+        # Filter out comments (#) and empty lines for a clean view
+        grep -v "^#" "$prop_file" | grep -v "^$" | column -t -s "="
+        echo -e "${BLUE}--------------------------------------------------${NC}"
+        info_msg "To edit: mcbesm config $world_name <key> <value>"
+        return 0
+    fi
+
+    # 3. UPDATE MODE: Change a specific property
+    if [ -n "$key" ] && [ -n "$value" ]; then
+        # Check if the key actually exists in the file first
+        if ! grep -q "^$key=" "$prop_file"; then
+            error_msg "Property '$key' does not exist in server.properties."
+            return 1
+        fi
+
+        # Perform the update using sed
+        # This replaces the line starting with 'key=' with 'key=value'
+        sed -i "s/^$key=.*/$key=$value/" "$prop_file"
+        
+        success_msg "Updated '$key' to '$value' for world '$world_name'."
+        
+        # UI Check: If server is running, warn the user
+        if screen -list | grep -q "\.mc_$world_name\s"; then
+            warn_msg "Server is currently running. Restart it to apply changes."
+        fi
+    else
+        # If they provided a key but no value
+        local current_val=$(grep "^$key=" "$prop_file" | cut -d'=' -f2)
+        info_msg "Current value for '$key' is: ${YELLOW}$current_val${NC}"
+    fi
+}

@@ -41,9 +41,11 @@ case "$COMMAND" in
     console)
         mc_console "$WORLD_NAME"
         ;;
-    # ------------------------
     status)
         mc_status
+        ;;
+    config)
+        mc_config "$WORLD_NAME" "$3" "$4"
         ;;
     help|*)
         print_usage
