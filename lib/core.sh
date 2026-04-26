@@ -1,15 +1,16 @@
 #!/bin/bash
 
 # Load configuration and UI helpers
-source "$(dirname "${BASH_SOURCE[0]}")/../config/mcbesm.conf"
-source "$(dirname "${BASH_SOURCE[0]}")/ui.sh"
+# Using absolute path to ensure files are found regardless of where the script is run
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$LIB_DIR/../config/mcbesm.conf"
+source "$LIB_DIR/ui.sh"
 
 # --- Function: Create a New World ---
 mc_create() {
-    local world_name=$1
-    local requested_port=$2  # The new port argument
+    local world_name="$1"
+    local requested_port="$2"
     
-    # --- 1. Validation ---
     if [ -z "$world_name" ]; then
         error_msg "Usage: mcbesm create <world_name> [port]"
         return 1
@@ -20,372 +21,240 @@ mc_create() {
         return 1
     fi
 
-    # --- 2. Smart Port Selection (Fixed for IPv6) ---
+    # Smart Port Selection (Fixed for IPv6 Shadowing)
     if [ -n "$requested_port" ]; then
         final_port=$requested_port
     else
         info_msg "Scanning for available port pair..."
-        # Find the highest port used
         max_port=$(grep -rh "^server-port=" "$INSTANCES_DIR"/*/server.properties 2>/dev/null | cut -d'=' -f2 | tr -d '\r' | sort -n | tail -1)
-        
-        if [ -z "$max_port" ]; then
-            final_port=41675
-        else
-            # INCREMENT BY 2 to avoid IPv6 shadowing
-            final_port=$((max_port + 2))
-        fi
+        final_port=$([ -z "$max_port" ] && echo 41675 || echo $((max_port + 2)))
     fi
 
-    # --- 3. Versioning & API Logic ---
+    # Versioning & API Logic
     info_msg "Checking API for latest version..."
     local rand_num=$RANDOM
-    curl -H "Accept-Encoding: identity" -H "Accept-Language: en" -L \
+    curl -s -H "Accept-Encoding: identity" -H "Accept-Language: en" -L \
          -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.$rand_num.212 Safari/537.36" \
          -o "$DOWNLOAD_CACHE/version.json" "$API_URL"
 
     local latest_url=$(grep -o 'https://www.minecraft.net/bedrockdedicatedserver/bin-linux/[^"]*' "$DOWNLOAD_CACHE/version.json" | head -n 1)
     local latest_file=$(echo "$latest_url" | sed 's#.*/##')
 
-    if [ -z "$latest_file" ]; then
-        error_msg "API retrieval failed. Check your network or the API URL."
-        return 1
-    fi
+    [ -z "$latest_file" ] && { error_msg "API retrieval failed."; return 1; }
 
+    # Handle Version Pinning
     local target_file="$latest_file"
     local target_url="$latest_url"
-
     if [ -e "$PIN_FILE" ]; then
-        local pin_file=$(cat "$PIN_FILE")
-        warn_msg "Version pin found: $pin_file"
-        target_file="$pin_file"
+        target_file=$(cat "$PIN_FILE")
         target_url="https://www.minecraft.net/bedrockdedicatedserver/bin-linux/$target_file"
+        warn_msg "Version pin active: $target_file"
     fi
 
-    # --- 4. Download & Extraction ---
+    # Download & Extraction
     if [ ! -f "$DOWNLOAD_CACHE/$target_file" ]; then
-        info_msg "Downloading version: $target_file"
+        info_msg "Downloading: $target_file"
         curl -L -A "Mozilla/5.0" -o "$DOWNLOAD_CACHE/$target_file" "$target_url"
-    else
-        info_msg "Version $target_file found in cache. Skipping download."
     fi
 
     info_msg "Extracting to instances/$world_name..."
     mkdir -p "$INSTANCES_DIR/$world_name"
     unzip -o -q "$DOWNLOAD_CACHE/$target_file" -d "$INSTANCES_DIR/$world_name"
 
-    # --- 5. Post-Installation Configuration ---
-    info_msg "Applying server configurations for port $final_port..."
+    # Post-Installation Config
     local prop_file="$INSTANCES_DIR/$world_name/server.properties"
-    
     if [ -f "$prop_file" ]; then
-        # Networking Essentials: Set unique IPv4 and IPv6 ports
         sed -i "s/^server-port=.*/server-port=$final_port/" "$prop_file"
         sed -i "s/^server-portv6=.*/server-portv6=$((final_port + 1))/" "$prop_file"
-        
-        # Performance & Gameplay tweaks
         sed -i 's/^view-distance=.*/view-distance=64/' "$prop_file"
-        sed -i 's/^max-threads=.*/max-threads=0/' "$prop_file"
     fi
 
-    # --- 6. Finalize ---
     chmod +x "$INSTANCES_DIR/$world_name/bedrock_server"
-    echo "$target_file" > "$INSTALLED_RECORD"
-    success_msg "World '$world_name' is ready on port $final_port!"
+    echo "$target_file" > "$INSTANCES_DIR/$world_name/version.txt"
+    success_msg "Instance '$world_name' ready on port $final_port!"
 }
 
 # --- Function: Start a Server ---
 mc_start() {
-    local instance_name=$1
+    local instance_name="$1"
     local worlds_dir="$INSTANCES_DIR/$instance_name/worlds"
     
-    # 1. List worlds and ask user to pick one
+    if [ ! -d "$INSTANCES_DIR/$instance_name" ]; then
+        error_msg "Instance '$instance_name' not found."; return 1
+    fi
+
+    # 1. World Selection Logic
     info_msg "Available worlds in $instance_name:"
     local worlds=($(ls -d "$worlds_dir"/*/ 2>/dev/null | sed 's#.*/##; s#/##'))
     
     if [ ${#worlds[@]} -eq 0 ]; then
-        error_msg "No worlds found. Use 'import' or 'create' first."
-        return 1
+        error_msg "No worlds found inside 'worlds/' folder."; return 1
     fi
 
-    for i in "${!worlds[@]}"; do
-        echo "  [$i] ${worlds[$i]}"
-    done
-
-    echo -en "${YELLOW}${BOLD}?? Select world number to run [Default 0]: ${NC}"
+    for i in "${!worlds[@]}"; do echo "  [$i] ${worlds[$i]}"; done
+    echo -en "${YELLOW}${BOLD}?? Select world index [Default 0]: ${NC}"
     read -r choice
     choice=${choice:-0}
     local selected_world=${worlds[$choice]}
 
-    # 2. Update server.properties BEFORE starting
+    # 2. Update config and Launch
     sed -i "s/^level-name=.*/level-name=$selected_world/" "$INSTANCES_DIR/$instance_name/server.properties"
-    
-    # 3. Standard Start Logic (Screen)
-    # ... [Keep your existing screen -dmS logic here] ...
     info_msg "Launching '$instance_name' with world '$selected_world'..."
-    cd "$INSTANCES_DIR/$instance_name" && screen -dmS "mc_$instance_name" bash -c "export LD_LIBRARY_PATH=. && ./bedrock_server"
-    success_msg "Server is live!"
+    
+    cd "$INSTANCES_DIR/$instance_name" || return
+    screen -dmS "mc_$instance_name" bash -c "export LD_LIBRARY_PATH=. && ./bedrock_server"
+    success_msg "Server is live! Use 'mcbesm console $instance_name' to view."
 }
 
 # --- Function: Stop a Server ---
 mc_stop() {
-    local world_name=$1
-    local session_name="mc_$world_name"
-
-    if ! screen -list | grep -q "\.$session_name"; then
-        error_msg "Server '$world_name' is not running."
-        return 1
+    local name="$1"
+    local session="mc_$name"
+    if ! screen -list | grep -q "\.$session\s"; then
+        error_msg "Server '$name' is not running."; return 1
     fi
-
-    info_msg "Sending stop command to '$world_name'..."
-    # Injects the 'stop' command into the screen session
-    screen -S "$session_name" -X stuff "stop$(printf \\r)"
-    success_msg "Stop command sent. The session will close once saving is complete."
+    info_msg "Stopping '$name'..."
+    screen -S "$session" -X stuff "stop$(printf \\r)"
+    success_msg "Stop command sent."
 }
 
-# --- Function: Advanced Status Dashboard (Fixed Alignment) ---
+# --- Function: Advanced Status Dashboard ---
 mc_status() {
-    screen -wipe > /dev/null 
+    screen -wipe > /dev/null
     local_ip=$(hostname -I | awk '{print $1}')
     
     print_header
-    print_table_header
+    print_table_header # Uses the 14|16|10|10|16|6 padding
 
     for world_path in "$INSTANCES_DIR"/*; do
         [ -d "$world_path" ] || continue
-        
-        world_name=$(basename "$world_path")
+        name=$(basename "$world_path")
         prop_file="$world_path/server.properties"
-        session_name="mc_$world_name"
         
-        # 1. Determine Status & Color logic
-        if screen -list | grep -q "\.$session_name"; then
-            status_color=$GREEN
-            status_text="Running"
+        # 1. Determine Status
+        if screen -list | grep -q "\.mc_$name\s"; then
+            s_col=$GREEN; s_txt="Running"
         else
-            status_color=$RED
-            status_text="Offline"
+            s_col=$RED; s_txt="Offline"
         fi
 
-        # 2. Get Port
+        # 2. Extract Data
         port=$(grep "^server-port=" "$prop_file" 2>/dev/null | cut -d'=' -f2 | tr -d '\r')
-        [ -z "$port" ] && port="19132"
-
-        # --- NEW CODE START: Get Active World Name ---
         active_world=$(grep "^level-name=" "$prop_file" 2>/dev/null | cut -d'=' -f2 | tr -d '\r')
-        [ -z "$active_world" ] && active_world="Bedrock level"
-        # --- NEW CODE END ---
+        [ ${#active_world} -gt 15 ] && active_world="${active_world:0:13}.."
 
-        # 3. Get Version (Cleanly)
-        # (Note: Using per-world version.txt is better for multi-version setups)
+        # 3. Get Version (Instance Specific)
         if [ -f "$world_path/version.txt" ]; then
-            version=$(cat "$world_path/version.txt" | grep -oP '\d+\.\d+\.\d+\.\d+')
+            ver=$(cat "$world_path/version.txt" | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1)
         else
-            version="Unknown"
+            ver="Unknown"
         fi
 
-        # 4. The Aligned Print Logic
-        # Update the first printf to include the new column %-15s
-        printf "%-15s | " "$world_name"
-        printf "%-15s | " "$active_world"   # <--- ADD THIS LINE
-        printf "${status_color}%-12s${NC} | " "$status_text"
-        printf "%-10s | " "$version"
-        printf "%-18s | " "$local_ip"
-        printf "%-8s\n" "$port"
+        # 4. FIXED PADDING: Colors applied OUTSIDE the width limit
+        printf "%-14s | " "$name"
+        printf "%-16s | " "${active_world:-Bedrock level}"
+        printf "${s_col}%-10s${NC} | " "$s_txt"
+        printf "%-10s | " "${ver:-?.?.?}"
+        printf "%-16s | " "${local_ip:-127.0.0.1}"
+        printf "%-6s\n" "${port:-19132}"
     done
-    echo -e "${BLUE}${BOLD}----------------------------------------------------------------------------------${NC}"
-}
-
-# --- Function: Attach to Server Console ---
-mc_console() {
-    local world_name=$1
-    local session_name="mc_$world_name"
-
-    # Check if a name was provided
-    if [ -z "$world_name" ]; then
-        error_msg "Usage: mcbesm console <world_name>"
-        return 1
-    fi
-
-    # Check if the session actually exists
-    if screen -list | grep -q "\.$session_name"; then
-        info_msg "Attaching to '${world_name}' console..."
-        echo -e "${YELLOW}${BOLD}IMPORTANT:${NC} Press ${CYAN}Ctrl+A${NC} then ${CYAN}D${NC} to detach."
-        echo -e "Do ${RED}NOT${NC} use Ctrl+C or you will kill the server!"
-        sleep 2
-        screen -r "$session_name"
-    else
-        error_msg "Server '$world_name' is not currently running."
-        return 1
-    fi
+    draw_hr
 }
 
 # --- Function: Advanced Property Editor ---
 mc_config() {
-    local world_name=$1
-    local key=$2
-    local value=$3
+    local world_name="$1"
+    local key="$2"
+    local value="$3"
     local prop_file="$INSTANCES_DIR/$world_name/server.properties"
 
-    # 1. Basic Validation
-    if [ -z "$world_name" ]; then
-        error_msg "Usage: mcbesm config <world_name> [property_key] [new_value]"
-        return 1
+    if [ -z "$world_name" ] || [ ! -f "$prop_file" ]; then
+        error_msg "Invalid instance or config not found."; return 1
     fi
 
-    if [ ! -f "$prop_file" ]; then
-        error_msg "Config file for '$world_name' not found."
-        return 1
-    fi
-
-    # 2. VIEW MODE: If only the world name is provided
     if [ -z "$key" ]; then
         print_header
-        info_msg "Current configuration for '$world_name':"
-        echo -e "${BLUE}--------------------------------------------------${NC}"
-        # Filter out comments (#) and empty lines for a clean view
+        info_msg "Config for '$world_name':"
+        draw_hr
         grep -v "^#" "$prop_file" | grep -v "^$" | column -t -s "="
-        echo -e "${BLUE}--------------------------------------------------${NC}"
-        info_msg "To edit: mcbesm config $world_name <key> <value>"
+        draw_hr
         return 0
     fi
 
-    # 3. UPDATE MODE: Change a specific property
-    if [ -n "$key" ] && [ -n "$value" ]; then
-        # Check if the key actually exists in the file first
+    if [ -n "$value" ]; then
         if ! grep -q "^$key=" "$prop_file"; then
-            error_msg "Property '$key' does not exist in server.properties."
-            return 1
+            error_msg "Key '$key' not found."; return 1
         fi
-
-        # Perform the update using sed
-        # This replaces the line starting with 'key=' with 'key=value'
         sed -i "s/^$key=.*/$key=$value/" "$prop_file"
-        
-        success_msg "Updated '$key' to '$value' for world '$world_name'."
-        
-        # UI Check: If server is running, warn the user
-        if screen -list | grep -q "\.mc_$world_name\s"; then
-            warn_msg "Server is currently running. Restart it to apply changes."
-        fi
+        success_msg "Set $key to $value."
+        screen -list | grep -q "\.mc_$world_name\s" && warn_msg "Restart required."
     else
-        # If they provided a key but no value
-        local current_val=$(grep "^$key=" "$prop_file" | cut -d'=' -f2)
-        info_msg "Current value for '$key' is: ${YELLOW}$current_val${NC}"
+        echo -e "Current $key: ${YELLOW}$(grep "^$key=" "$prop_file" | cut -d'=' -f2)${NC}"
     fi
 }
 
-# --- Function: Delete a World ---
-mc_delete() {
-    local world_name=$1
-    local session_name="mc_$world_name"
-
-    if [ -z "$world_name" ]; then
-        error_msg "Usage: mcbesm delete <world_name>"
-        return 1
-    fi
-
-    if [ ! -d "$INSTANCES_DIR/$world_name" ]; then
-        error_msg "World '$world_name' not found."
-        return 1
-    fi
-
-    # Security: Don't delete a running server!
-    if screen -list | grep -q "\.$session_name\s"; then
-        error_msg "Server is running. Stop it first with 'mcbesm stop $world_name'."
-        return 1
-    fi
-
-    # Confirmation using the function from ui.sh
-    if confirm_action "Are you sure you want to PERMANENTLY delete '$world_name'?"; then
-        info_msg "Deleting files and freeing ports..."
-        rm -rf "$INSTANCES_DIR/$world_name"
-        success_msg "World '$world_name' has been removed. Ports are now available for reuse."
-    else
-        info_msg "Deletion cancelled."
-    fi
-}
-
-# --- Function: Multi-Format World Import ---
+# --- Function: Import Custom World (MIME-Aware) ---
 mc_import() {
-    local instance_name="$1"
-    local input_path="$2"
-    local new_world_name="$3"
-    
-    # [Keep your basic validation here...]
+    local instance="$1"
+    local path="$2"
+    local name="$3"
+    local dest="$INSTANCES_DIR/$instance/worlds/$name"
 
-    local instance_path="$INSTANCES_DIR/$instance_name"
-    local dest_dir="$instance_path/worlds/$new_world_name"
-
-    # 1. Detect File Type (Reliable Way)
-    local file_type=$(file --mime-type -b "$input_path")
-
-    # 2. Process based on actual content, not just extension
-    if [ -d "$input_path" ]; then
-        info_msg "Importing folder..."
-        cp -r "$input_path" "$dest_dir" || return 1
-        
-    elif [[ "$file_type" == "application/zip" ]] || [[ "$input_path" == *.mcworld ]]; then
-        info_msg "Extracting ZIP/MCWORLD..."
-        mkdir -p "$dest_dir"
-        if unzip -o -q "$input_path" -d "$dest_dir"; then
-            success_msg "Imported '$new_world_name' successfully."
-        else
-            error_msg "ZIP extraction failed."; rm -rf "$dest_dir"; return 1
-        fi
-
-    elif [[ "$file_type" == "application/x-rar" ]] || [[ "$file_type" == "application/vnd.rar" ]]; then
-        info_msg "Extracting RAR archive..."
-        mkdir -p "$dest_dir"
-        # 'unrar x' extracts with full paths, '-idq' is quiet mode
-        if unrar x -idq "$input_path" "$dest_dir/"; then
-            success_msg "Imported RAR-based world '$new_world_name'."
-        else
-            error_msg "RAR extraction failed. Is 'unrar' installed?"; rm -rf "$dest_dir"; return 1
-        fi
-
-    else
-        error_msg "Unsupported file type: $file_type"
-        return 1
+    if [ -z "$instance" ] || [ -z "$path" ] || [ -z "$name" ]; then
+        error_msg "Usage: mcbesm import <instance> <path> <name>"; return 1
     fi
 
-    chmod -R 755 "$dest_dir"
+    [ ! -d "$INSTANCES_DIR/$instance" ] && { error_msg "Instance not found."; return 1; }
+    
+    local type=$(file --mime-type -b "$path")
+    mkdir -p "$dest"
+
+    if [ -d "$path" ]; then
+        cp -r "$path/." "$dest/"
+    elif [[ "$type" == *"zip"* ]] || [[ "$path" == *.mcworld ]]; then
+        unzip -o -q "$path" -d "$dest"
+    elif [[ "$type" == *"rar"* ]]; then
+        unrar x -idq "$path" "$dest/"
+    else
+        error_msg "Unsupported format: $type"; rm -rf "$dest"; return 1
+    fi
+
+    chmod -R 755 "$dest"
+    success_msg "Imported '$name' to '$instance'."
 }
 
-# --- Function: List all worlds inside an instance ---
+# --- Function: Delete Instance ---
+mc_delete() {
+    local name="$1"
+    [ -z "$name" ] && return 1
+    if screen -list | grep -q "\.mc_$name\s"; then
+        error_msg "Server is running. Stop it first."; return 1
+    fi
+
+    if confirm_action "Delete ALL data for '$name'?"; then
+        rm -rf "$INSTANCES_DIR/$name"
+        success_msg "Instance '$name' deleted."
+    fi
+}
+
+# --- Function: List Worlds ---
 mc_list_worlds() {
-    local instance_name="$1"
+    local name="$1"
+    local dir="$INSTANCES_DIR/$name/worlds"
+    [ ! -d "$dir" ] && { error_msg "Instance not found."; return 1; }
     
-    # 1. Validation
-    if [ -z "$instance_name" ]; then
-        error_msg "Usage: mcbesm worlds <instance_name>"
-        return 1
-    fi
-
-    # Ensure we have the full path to the instances folder
-    local worlds_dir="$INSTANCES_DIR/$instance_name/worlds"
-
-    if [ ! -d "$worlds_dir" ]; then
-        error_msg "Directory not found: $worlds_dir"
-        info_msg "Maybe the instance name is misspelled?"
-        return 1
-    fi
-
     print_header
-    info_msg "Scanning storage for '$instance_name'..."
-    echo -e "${BLUE}--------------------------------------------------${NC}"
-    
-    # Use 'find' instead of 'ls' - it's more reliable for scripts
-    local count=0
-    while IFS= read -r dir; do
-        world=$(basename "$dir")
-        echo -e "  [${CYAN}#${NC}] $world"
-        ((count++))
-    done < <(find "$worlds_dir" -maxdepth 1 -mindepth 1 -type d)
+    info_msg "Worlds in '$name':"
+    draw_hr
+    find "$dir" -maxdepth 1 -mindepth 1 -type d | sed 's#.*/##' | sed 's/^/  - /'
+    draw_hr
+}
 
-    if [ "$count" -eq 0 ]; then
-        warn_msg "No world folders found in $worlds_dir"
-    else
-        echo -e "${BLUE}--------------------------------------------------${NC}"
-        success_msg "Found $count world(s)."
-    fi
+# --- Function: List Cached Versions ---
+mc_versions() {
+    print_header
+    info_msg "Cached binaries (.cache/):"
+    draw_hr
+    ls "$DOWNLOAD_CACHE"/*.zip 2>/dev/null | sed 's#.*/##' | sed 's/^/  - /'
+    draw_hr
 }
